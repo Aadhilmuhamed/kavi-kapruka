@@ -80,5 +80,3 @@ components/
 
 ## Submission
 Register: `kapruka.com/contactUs/agentChallengeApply.html` · Submit live Vercel URL before 30 June 2026 · MCP issues: hello@kapruka.com
-
-🤖 Built with [Claude Code](https://claude.com/claude-code)
