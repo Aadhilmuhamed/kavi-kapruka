@@ -109,15 +109,23 @@ export function extractProducts(result: Any): Product[] {
     arr = [data];
   }
 
-  const mapped = arr.map((p: Any, i: number) => ({
-    id: String(p.id ?? p.sku ?? p.productId ?? p.product_id ?? i),
-    name: p.name ?? p.title ?? p.productName ?? 'Product',
-    price: priceAmount(p),
-    image: imageOf(p),
-    currency: priceCurrency(p),
-    in_stock: p.in_stock ?? p.inStock ?? p.available ?? true,
-    url: p.url ?? p.link ?? '',
-  }));
+  const mapped = arr.map((p: Any, i: number) => {
+    const catRaw = p.category ?? p.categoryName ?? p.category_name;
+    const category =
+      catRaw && typeof catRaw === 'object' ? catRaw.name ?? catRaw.title : catRaw;
+    return {
+      id: String(p.id ?? p.sku ?? p.productId ?? p.product_id ?? i),
+      name: p.name ?? p.title ?? p.productName ?? 'Product',
+      price: priceAmount(p),
+      image: imageOf(p),
+      currency: priceCurrency(p),
+      in_stock: p.in_stock ?? p.inStock ?? p.available ?? true,
+      url: p.url ?? p.link ?? '',
+      summary: p.summary ?? p.description ?? p.desc ?? p.short_description ?? '',
+      category: typeof category === 'string' ? category : undefined,
+      stockLevel: p.stock_level ?? p.stockLevel ?? p.availability ?? undefined,
+    };
+  });
 
   // Kapruka search can return the same product id twice — dedupe so cards don't
   // collide on React keys or duplicate in the carousel.
