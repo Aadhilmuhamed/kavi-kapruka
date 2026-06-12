@@ -12,6 +12,7 @@
     "@ai-sdk/anthropic": "^1.2.12",
     "@ai-sdk/google": "^1.2.22",
     "@modelcontextprotocol/sdk": "^1.12.1",
+    "@vercel/analytics": "^2.0.1",
     "ai": "^4.3.16",
     "clsx": "^2.1.1",
     "framer-motion": "^11.18.2",
