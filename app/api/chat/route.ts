@@ -11,6 +11,46 @@ const MCP_URL = "https://mcp.kapruka.com/mcp";
 type MCPClient = Awaited<ReturnType<typeof experimental_createMCPClient>>;
 
 /**
+ * Kapruka search is literal: generic words ("flowers", "phone") return nothing,
+ * but specific nouns/brands ("roses", "mobile", "samsung") work. The model isn't
+ * always disciplined about this, so we rewrite vague queries deterministically
+ * before they hit the catalog — cards then show even if the model picks a lazy term.
+ */
+function normalizeSearchQuery(q: string): string {
+  const s = q.toLowerCase();
+  // Brand/model queries already work — leave them alone.
+  if (/(samsung|redmi|xiaomi|nubia|sony|huawei|oppo|vivo|realme|apple|iphone|nokia|infinix|tecno|jbl|hp|dell|lenovo|asus|acer)/.test(s)) {
+    return q;
+  }
+  if (/\b(flowers?|floral|bouquets?|blooms?)\b/.test(s)) return 'roses';
+  if (/(smart\s?phones?|cell\s?phones?|mobile\s?phones?|\bphones?\b|\bmobiles?\b|handset)/.test(s)) {
+    return 'mobile';
+  }
+  return q;
+}
+
+/** Detect an "empty"/error search result so we can retry with a looser query. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function isEmptySearch(res: any): boolean {
+  try {
+    const txt =
+      res?.content?.find((c: { type: string }) => c.type === 'text')?.text ??
+      (typeof res === 'string' ? res : '');
+    if (!txt) return false;
+    if (/no products found|not found|rate limit/i.test(txt)) return true;
+    try {
+      const j = JSON.parse(txt);
+      const arr = j.results || j.items || j.products || j.data || (Array.isArray(j) ? j : []);
+      return Array.isArray(arr) && arr.length === 0;
+    } catch {
+      return false;
+    }
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Every Kapruka tool accepts a `response_format` of 'markdown' (default) or
  * 'json'. We force 'json' on every call so the UI can render structured product
  * cards / pay links instead of trying to scrape markdown. This is independent
@@ -30,16 +70,50 @@ function forceJsonResponses(raw: Record<string, Tool>): Record<string, Tool> {
       ...tool,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       execute: async (args: any, opts: any) => {
-        // Every Kapruka tool expects { params: {...} }. Always normalise to that
-        // shape and force JSON — rescues the call even if the model forgets to
-        // wrap its arguments.
-        let nextArgs = args;
-        if (args && typeof args === 'object') {
-          const inner =
-            args.params && typeof args.params === 'object' ? args.params : args;
-          nextArgs = { params: { ...inner, response_format: 'json' } };
+        // Every Kapruka tool expects { params: {...} }. Normalise to that shape
+        // and force JSON — rescues the call even if the model forgets to wrap args.
+        const inner: Record<string, unknown> =
+          args && typeof args === 'object'
+            ? { ...(args.params && typeof args.params === 'object' ? args.params : args) }
+            : {};
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const run = (p: Record<string, unknown>): Promise<any> =>
+          original.execute({ params: { ...p, response_format: 'json' } }, opts);
+
+        if (name !== 'kapruka_search_products') {
+          return run(inner);
         }
-        return original.execute(nextArgs, opts);
+
+        // Rewrite vague queries to terms the catalog actually matches.
+        if (typeof inner.q === 'string') inner.q = normalizeSearchQuery(inner.q);
+
+        let res = await run(inner);
+
+        // If empty, progressively LOOSEN the query inside this single tool call so
+        // the model gets results first try and never has to visibly "retry" / apologise.
+        if (isEmptySearch(res)) {
+          const loosened: Record<string, unknown>[] = [];
+          // 1) drop category (vague q + category is the #1 cause of 0 hits)
+          if (inner.category) {
+            const { category, ...r } = inner;
+            void category;
+            loosened.push(r);
+          }
+          // 2) drop price filters too (budget can exclude everything)
+          if (inner.min_price != null || inner.max_price != null) {
+            const { category, min_price, max_price, ...r } = inner;
+            void category;
+            void min_price;
+            void max_price;
+            loosened.push(r);
+          }
+          for (const attempt of loosened) {
+            res = await run(attempt);
+            if (!isEmptySearch(res)) break;
+          }
+        }
+        return res;
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any;

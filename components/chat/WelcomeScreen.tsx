@@ -3,12 +3,12 @@
 import { motion } from 'framer-motion';
 
 const SUGGESTIONS = [
-  { emoji: '🎂', label: 'Birthday cake delivery', prompt: 'I want to order a birthday cake' },
-  { emoji: '💐', label: 'Send flowers', prompt: 'I want to send flowers' },
-  { emoji: '🍫', label: 'Chocolates', prompt: 'Show me chocolate gift boxes' },
-  { emoji: '🛍️', label: 'Browse categories', prompt: 'Show me your product categories' },
+  { emoji: '🛒', label: 'Restock groceries', prompt: 'Help me restock my weekly groceries' },
+  { emoji: '📱', label: 'Phone under 50k', prompt: 'I need a new mobile phone under LKR 50000' },
+  { emoji: '💄', label: 'Treat myself', prompt: 'Show me beauty and skincare picks for myself' },
+  { emoji: '💐', label: 'Send flowers', prompt: 'I want to send flowers to someone' },
+  { emoji: '🎂', label: 'Birthday gift', prompt: 'Help me find a birthday gift' },
   { emoji: '📦', label: 'Track my order', prompt: 'I want to track my order' },
-  { emoji: '💝', label: 'Anniversary gift', prompt: 'Help me find an anniversary gift' },
 ];
 
 export default function WelcomeScreen({
@@ -42,8 +42,8 @@ export default function WelcomeScreen({
           ආයුබෝවන්! I&apos;m Kavi
         </h1>
         <p className="text-on-surface-variant text-body-lg mb-8 leading-relaxed">
-          Your personal shopping concierge for Kapruka.com — Sri Lanka&apos;s largest store.
-          Curated gifts, effortless checkout, delivered with care.
+          From the weekly grocery run to the perfect gift — I shop Kapruka.com for you,
+          read the moment, and get it to your door. 🇱🇰
         </p>
 
         {/* Gift Advisor hero CTA */}
