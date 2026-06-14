@@ -17,7 +17,7 @@ export default function Home() {
   const [voiceOut, setVoiceOut] = useState(false);
   const voiceOutRef = useRef(false);
 
-  const { messages, input, setInput, handleInputChange, handleSubmit, isLoading, append } =
+  const { messages, input, setInput, handleInputChange, handleSubmit, isLoading, append, setMessages } =
     useChat({
       api: '/api/chat',
       onFinish: (message: Message) => {
@@ -57,18 +57,42 @@ export default function Home() {
         {/* Top nav — Kapruka Luxe concierge */}
         <header className="flex items-center justify-between px-margin-mobile md:px-margin-desktop h-16 md:h-20 border-b border-outline-variant/30 bg-surface/90 backdrop-blur-xl z-20 shadow-sm shadow-primary/5">
           <div className="flex items-center gap-4 md:gap-8 min-w-0">
-            <a href="#" className="flex items-center gap-2.5 shrink-0">
+            <button
+              onClick={() => setMessages([])}
+              title="Kavi — new conversation"
+              className="flex items-center gap-2.5 shrink-0"
+            >
               <div className="w-9 h-9 rounded-full bg-gradient-to-br from-primary to-primary-container flex items-center justify-center text-base font-display text-white shadow-lg shadow-primary/20">
                 ක
               </div>
-              <span className="font-display-lg text-headline-md font-bold tracking-tight text-primary">
-                Kapruka Luxe
+              <span className="flex flex-col items-start leading-none">
+                <span className="font-display-lg text-headline-md font-bold tracking-tight text-primary">
+                  Kavi
+                </span>
+                <span className="hidden sm:block text-[9px] uppercase tracking-[0.18em] text-on-surface-variant/70 font-semibold mt-0.5">
+                  Kapruka Concierge
+                </span>
               </span>
-            </a>
+            </button>
             <nav className="hidden md:flex items-center gap-6">
-              <a href="#" className="text-primary font-bold font-label-caps text-label-caps uppercase hover:opacity-80 transition-opacity">Concierge</a>
-              <a href="#" className="text-on-surface-variant font-label-caps text-label-caps uppercase hover:opacity-80 transition-opacity">Collections</a>
-              <a href="#" className="text-on-surface-variant font-label-caps text-label-caps uppercase hover:opacity-80 transition-opacity">Orders</a>
+              <button
+                onClick={() => setMessages([])}
+                className="text-primary font-bold font-label-caps text-label-caps uppercase hover:opacity-80 transition-opacity"
+              >
+                Concierge
+              </button>
+              <button
+                onClick={() => handleSuggestion('Show me your product categories')}
+                className="text-on-surface-variant font-label-caps text-label-caps uppercase hover:text-primary transition-colors"
+              >
+                Collections
+              </button>
+              <button
+                onClick={() => handleSuggestion('I want to track my order')}
+                className="text-on-surface-variant font-label-caps text-label-caps uppercase hover:text-primary transition-colors"
+              >
+                Orders
+              </button>
             </nav>
           </div>
           <div className="flex items-center gap-2 md:gap-3">

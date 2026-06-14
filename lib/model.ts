@@ -49,6 +49,12 @@ const hasGoogle = () => geminiKeys().length > 0;
 // Per-key cooldown timestamps (module-level, survives across requests in a warm instance).
 const cooldownUntil: Record<number, number> = {};
 let geminiPointer = 0;
+const KEY_VERIFY_TTL = 30 * 1000; // reuse a freshly-verified key without re-pinging
+// Last Gemini key proven to work (skip preflight if still fresh).
+let geminiVerified: { idx: number; at: number } | null = null;
+
+// Quota / rate-limit errors that mean "rotate to the next Gemini key".
+const QUOTA_RE = /quota|rate.?limit|429|resource[_ ]?exhausted|exhausted|too many requests/i;
 
 // Errors that mean "this Anthropic key can't be used" → fall back to Gemini.
 const FATAL_RE =
@@ -139,12 +145,83 @@ function pickGeminiModel(): ChosenModel | null {
   return build(best);
 }
 
-/** Pick the chat model: Anthropic first, multi-key Gemini fallback. */
+/** Build a ChosenModel for a specific Gemini key index. */
+function buildGemini(idx: number, keys: string[]): ChosenModel {
+  geminiPointer = (idx + 1) % keys.length;
+  const provider = createGoogleGenerativeAI({ apiKey: keys[idx] });
+  return {
+    model: provider(GEMINI_MODEL),
+    provider: 'google',
+    keyIndex: idx + 1,
+    onQuotaError: () => {
+      cooldownUntil[idx] = Date.now() + KEY_COOLDOWN;
+      if (geminiVerified?.idx === idx) geminiVerified = null;
+      console.warn(
+        `[Kavi] Gemini key #${idx + 1} hit quota — cooling down ${KEY_COOLDOWN / 1000}s`
+      );
+    },
+  };
+}
+
+/**
+ * Pick a Gemini key that ACTUALLY works right now. Pings each non-cooled key
+ * (1-token preflight); the first to answer is used. Any key that returns a
+ * quota/rate error is cooled down and skipped — so "if one key is at its limit,
+ * switch to the next" happens on the very request that hits the wall.
+ *
+ * A freshly-verified key is reused for KEY_VERIFY_TTL to avoid pinging twice.
+ */
+async function pickWorkingGeminiModel(): Promise<ChosenModel | null> {
+  const keys = geminiKeys();
+  if (!keys.length) return null;
+  const now = Date.now();
+
+  // Fast path: a key verified seconds ago and not cooled → reuse, no ping.
+  if (
+    geminiVerified &&
+    now - geminiVerified.at < KEY_VERIFY_TTL &&
+    geminiVerified.idx < keys.length &&
+    (cooldownUntil[geminiVerified.idx] ?? 0) <= now
+  ) {
+    return buildGemini(geminiVerified.idx, keys);
+  }
+
+  // Try each key once, starting at the rotating pointer, skipping cooled keys.
+  for (let n = 0; n < keys.length; n++) {
+    const idx = (geminiPointer + n) % keys.length;
+    if ((cooldownUntil[idx] ?? 0) > Date.now()) continue;
+
+    const provider = createGoogleGenerativeAI({ apiKey: keys[idx] });
+    const model = provider(GEMINI_MODEL);
+    try {
+      await generateText({ model, prompt: 'ping', maxTokens: 1 });
+      geminiVerified = { idx, at: Date.now() };
+      console.log(`[Kavi] Gemini key #${idx + 1} verified`);
+      return buildGemini(idx, keys);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (QUOTA_RE.test(msg)) {
+        cooldownUntil[idx] = Date.now() + KEY_COOLDOWN;
+        console.warn(`[Kavi] Gemini key #${idx + 1} at limit — rotating to next`);
+        continue;
+      }
+      // Non-quota error (network blip / bad key) — try the next key too.
+      console.warn(`[Kavi] Gemini key #${idx + 1} failed (${msg}) — trying next`);
+      continue;
+    }
+  }
+
+  // Every key cooled/failed — fall back to round-robin pick (soonest free).
+  console.warn('[Kavi] all Gemini keys exhausted — using soonest-free key');
+  return pickGeminiModel();
+}
+
+/** Pick the chat model: Anthropic first, auto-rotating multi-key Gemini fallback. */
 export async function getChatModel(): Promise<ChosenModel> {
   if (await anthropicUsable()) {
     return { model: anthropic(ANTHROPIC_MODEL), provider: 'anthropic' };
   }
-  const gemini = pickGeminiModel();
+  const gemini = await pickWorkingGeminiModel();
   if (gemini) return gemini;
   // Neither usable: return Anthropic so the route surfaces a clear billing message.
   return { model: anthropic(ANTHROPIC_MODEL), provider: 'anthropic' };
