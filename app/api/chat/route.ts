@@ -30,6 +30,34 @@ function normalizeSearchQuery(q: string): string {
   return q;
 }
 
+/**
+ * For a phone search, drop accessory results (stands, gimbals, cases, cables…)
+ * that match the word "smartphone" but aren't actual devices. Mutates the JSON
+ * inside the MCP text envelope. No-op if it would empty the list.
+ */
+const ACCESSORY_RE =
+  /\b(stand|holder|mount|gimbal|stabili[sz]er|tripod|case|cover|pouch|sleeve|cable|charger|adapter|protector|tempered|screen ?guard|guard|strap|lens|selfie ?stick|ring ?light|grip|stylus|earphone|earbud|headphone|powerbank|power ?bank)\b/i;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function stripAccessories(res: any): any {
+  try {
+    const part = res?.content?.find((c: { type: string }) => c.type === 'text');
+    if (!part || typeof part.text !== 'string') return res;
+    const j = JSON.parse(part.text);
+    const key = j.results ? 'results' : j.items ? 'items' : j.products ? 'products' : null;
+    const arr = key ? j[key] : Array.isArray(j) ? j : null;
+    if (!Array.isArray(arr)) return res;
+    const filtered = arr.filter(
+      (p: { name?: string; title?: string }) => !ACCESSORY_RE.test(p.name || p.title || '')
+    );
+    if (filtered.length === 0 || filtered.length === arr.length) return res;
+    if (key) j[key] = filtered;
+    part.text = JSON.stringify(key ? j : filtered);
+    return res;
+  } catch {
+    return res;
+  }
+}
+
 /** Detect an "empty"/error search result so we can retry with a looser query. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function isEmptySearch(res: any): boolean {
@@ -121,6 +149,8 @@ function forceJsonResponses(raw: Record<string, Tool>): Record<string, Tool> {
             if (!isEmptySearch(res)) break;
           }
         }
+        // Phone search: strip stray accessories so only real devices show.
+        if (inner.q === 'smartphone') res = stripAccessories(res);
         return res;
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
