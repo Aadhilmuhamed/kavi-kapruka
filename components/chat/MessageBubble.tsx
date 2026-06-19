@@ -9,8 +9,32 @@ import TrackOrderCard from '@/components/checkout/TrackOrderCard';
 import type { Product } from '@/components/products/ProductCard';
 import { extractProducts, extractOrder, extractTracking } from '@/lib/mcp-parse';
 
+const isProductTool = (name: string) =>
+  name === 'kapruka_search_products' || name === 'kapruka_get_product';
+
 export default function MessageBubble({ message }: { message: Message }) {
   const isUser = message.role === 'user';
+  const invocations = message.toolInvocations ?? [];
+
+  // Merge products from EVERY product tool call in this message into one deduped
+  // list → a single "Top matches" carousel (no repeated headers when the model
+  // searches more than once).
+  const products: Product[] = [];
+  const seen = new Set<string>();
+  for (const inv of invocations) {
+    if (inv.state === 'result' && isProductTool(inv.toolName)) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const p of extractProducts((inv as any).result)) {
+        if (!seen.has(p.id)) {
+          seen.add(p.id);
+          products.push(p);
+        }
+      }
+    }
+  }
+  const productLoading = invocations.some(
+    (inv) => inv.state !== 'result' && isProductTool(inv.toolName)
+  );
 
   return (
     <motion.div
@@ -49,41 +73,19 @@ export default function MessageBubble({ message }: { message: Message }) {
           </div>
         )}
 
-        {/* Tool invocation results */}
-        {message.toolInvocations?.map((invocation) => {
-          // Loading state — only product-ish tools get a visual skeleton.
-          if (invocation.state !== 'result') {
-            const isProductTool =
-              invocation.toolName === 'kapruka_search_products' ||
-              invocation.toolName === 'kapruka_get_product';
-            return isProductTool ? (
-              <ProductSkeleton key={invocation.toolCallId} />
-            ) : null;
-          }
+        {/* Product results — one merged carousel for the whole message */}
+        {productLoading && products.length === 0 && <ProductSkeleton />}
+        {products.length > 0 && (
+          <ProductCarousel products={products} label="Top matches" />
+        )}
 
+        {/* Order / tracking cards (categories & delivery render as AI text) */}
+        {invocations.map((invocation) => {
+          if (invocation.state !== 'result') return null;
           const { toolName } = invocation;
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const result = (invocation as any).result;
 
-          // Product search results
-          if (toolName === 'kapruka_search_products') {
-            return (
-              <ProductCarousel
-                key={invocation.toolCallId}
-                products={extractProducts(result)}
-              />
-            );
-          }
-
-          // Single product detail
-          if (toolName === 'kapruka_get_product') {
-            const products = extractProducts(result);
-            return (
-              <ProductCarousel key={invocation.toolCallId} products={products} />
-            );
-          }
-
-          // Order created → pay link
           if (toolName === 'kapruka_create_order') {
             const order = extractOrder(result);
             return (
@@ -98,7 +100,6 @@ export default function MessageBubble({ message }: { message: Message }) {
             );
           }
 
-          // Track order → status timeline card
           if (toolName === 'kapruka_track_order') {
             return (
               <TrackOrderCard
@@ -108,7 +109,6 @@ export default function MessageBubble({ message }: { message: Message }) {
             );
           }
 
-          // Other tools (categories, delivery cities) are rendered as AI text.
           return null;
         })}
       </div>

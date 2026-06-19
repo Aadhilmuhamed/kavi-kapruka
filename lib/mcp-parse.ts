@@ -127,14 +127,29 @@ export function extractProducts(result: Any): Product[] {
     };
   });
 
-  // Kapruka search can return the same product id twice — dedupe so cards don't
-  // collide on React keys or duplicate in the carousel.
+  // Kapruka search can mix third-party seller / store-directory pages in with real
+  // products (e.g. "Doctor Mobile", "Kapruka Partner" at a token price). Real products
+  // always live at a /buyonline/ URL; drop everything else. Fall back to "has a real
+  // price + image" when no URL is present so we never wrongly hide a genuine product.
+  const isRealProduct = (p: (typeof mapped)[number]) => {
+    if (p.url) return /\/buyonline\//i.test(p.url);
+    return p.price > 0 && !!p.image;
+  };
+
   const seen = new Set<string>();
-  return mapped.filter((p) => {
+  const cleaned = mapped.filter((p) => {
+    if (!isRealProduct(p)) return false;
     if (seen.has(p.id)) return false;
     seen.add(p.id);
     return true;
   });
+  // If filtering removed everything (unexpected URL shape), fall back to the raw
+  // deduped list rather than showing an empty carousel.
+  if (cleaned.length === 0) {
+    const seen2 = new Set<string>();
+    return mapped.filter((p) => (seen2.has(p.id) ? false : (seen2.add(p.id), true)));
+  }
+  return cleaned;
 }
 
 export interface OrderResult {

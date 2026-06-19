@@ -23,8 +23,9 @@ function normalizeSearchQuery(q: string): string {
     return q;
   }
   if (/\b(flowers?|floral|bouquets?|blooms?)\b/.test(s)) return 'roses';
+  // "mobile"/"phone" match seller-store directory pages; "smartphone" returns real handsets.
   if (/(smart\s?phones?|cell\s?phones?|mobile\s?phones?|\bphones?\b|\bmobiles?\b|handset)/.test(s)) {
-    return 'mobile';
+    return 'smartphone';
   }
   return q;
 }
@@ -87,6 +88,13 @@ function forceJsonResponses(raw: Record<string, Tool>): Record<string, Tool> {
 
         // Rewrite vague queries to terms the catalog actually matches.
         if (typeof inner.q === 'string') inner.q = normalizeSearchQuery(inner.q);
+
+        // price_asc on gadget searches surfaces cheap accessories (phone stands,
+        // cases) above real devices. Force relevance so actual phones rank first;
+        // max_price still honours the budget.
+        if (inner.q === 'smartphone' && inner.sort === 'price_asc') {
+          delete inner.sort;
+        }
 
         let res = await run(inner);
 
