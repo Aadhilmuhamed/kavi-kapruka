@@ -26,7 +26,7 @@ export default function ProductCarousel({
         </h4>
         <div className="h-px flex-grow bg-outline-variant/40" />
       </div>
-      <div className="flex gap-4 overflow-x-auto hide-scrollbar pb-2 -mx-1 px-1 snap-x">
+      <div className="flex gap-4 overflow-x-auto pb-3 -mx-1 px-1 snap-x">
         {products.map((product, i) => (
           <div key={`${product.id}-${i}`} className="snap-start">
             <ProductCard product={product} index={i} />

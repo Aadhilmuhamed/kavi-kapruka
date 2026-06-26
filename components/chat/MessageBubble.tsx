@@ -72,15 +72,23 @@ export default function MessageBubble({ message }: { message: Message }) {
             {message.content}
           </div>
         )}
+      </div>
 
-        {/* Product results — one merged carousel for the whole message */}
-        {productLoading && products.length === 0 && <ProductSkeleton />}
-        {products.length > 0 && (
+      {/* Product rail — full chat-column width so cards aren't clipped and the
+          row scrolls horizontally (slim scrollbar shows below it). */}
+      {productLoading && products.length === 0 && (
+        <div className="w-full mt-2">
+          <ProductSkeleton />
+        </div>
+      )}
+      {products.length > 0 && (
+        <div className="w-full mt-2">
           <ProductCarousel products={products} label="Top matches" />
-        )}
+        </div>
+      )}
 
-        {/* Order / tracking cards (categories & delivery render as AI text) */}
-        {invocations.map((invocation) => {
+      {/* Order / tracking cards (categories & delivery render as AI text) */}
+      {invocations.map((invocation) => {
           if (invocation.state !== 'result') return null;
           const { toolName } = invocation;
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -111,7 +119,6 @@ export default function MessageBubble({ message }: { message: Message }) {
 
           return null;
         })}
-      </div>
     </motion.div>
   );
 }
