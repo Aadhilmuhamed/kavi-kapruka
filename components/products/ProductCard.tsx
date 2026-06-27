@@ -1,7 +1,7 @@
 'use client';
 
 import { motion, AnimatePresence } from 'framer-motion';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useCartStore } from '@/store/cart';
 import { formatPrice } from '@/lib/utils';
 
@@ -19,6 +19,22 @@ export interface Product {
   stockLevel?: string;
 }
 
+interface ProductDetail {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  compareAtPrice?: number;
+  currency: string;
+  inStock: boolean;
+  stockLevel?: string;
+  rating?: number;
+  vendor?: string;
+  subtype?: string;
+  images: string[];
+  url: string;
+}
+
 export default function ProductCard({
   product,
   index = 0,
@@ -31,6 +47,11 @@ export default function ProductCard({
   const [imgFailed, setImgFailed] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
   const [qty, setQty] = useState(1);
+  const [detail, setDetail] = useState<ProductDetail | null>(null);
+  const [similar, setSimilar] = useState<Product[]>([]);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+  const [activeImg, setActiveImg] = useState(0);
+  const fetchedRef = useRef(false);
 
   const imageUrl = product.image || product.imageUrl || '';
   const inStock = product.in_stock !== false;
@@ -38,6 +59,32 @@ export default function ProductCard({
     typeof product.price === 'number'
       ? product.price
       : parseFloat(product.price as unknown as string) || 0;
+
+  // Fetch full details + similar products the first time the modal opens.
+  // Guarded by a ref so React StrictMode's double-effect doesn't cancel the
+  // only in-flight request (which left detail empty).
+  useEffect(() => {
+    if (!showInfo || fetchedRef.current) return;
+    fetchedRef.current = true;
+    setLoadingDetail(true);
+    fetch(`/api/product?id=${encodeURIComponent(product.id)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.detail) setDetail(data.detail);
+        if (Array.isArray(data?.similar)) setSimilar(data.similar);
+      })
+      .catch(() => {})
+      .finally(() => setLoadingDetail(false));
+  }, [showInfo, product.id]);
+
+  const gallery = detail?.images?.length ? detail.images : imageUrl ? [imageUrl] : [];
+  const mainImage = gallery[activeImg] || imageUrl;
+  const description =
+    detail?.description?.trim() ||
+    product.summary?.trim() ||
+    '';
+  const compareAt =
+    detail?.compareAtPrice && detail.compareAtPrice > price ? detail.compareAtPrice : undefined;
 
   const handleAdd = () => {
     if (!inStock) return;
@@ -172,13 +219,14 @@ export default function ProductCard({
               <span className="material-symbols-outlined text-[20px]">close</span>
             </button>
 
-            <div className="overflow-y-auto flex flex-col lg:flex-row">
-              {/* Image panel */}
+            <div className="overflow-y-auto">
+              <div className="flex flex-col lg:flex-row">
+              {/* Image panel + gallery */}
               <div className="lg:w-1/2 shrink-0 p-3 sm:p-4 bg-surface-container-low/40">
                 <div className="relative aspect-square rounded-2xl overflow-hidden bg-surface-container-low">
-                  {imageUrl && !imgFailed ? (
+                  {mainImage && !imgFailed ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={imageUrl} alt={product.name} className="w-full h-full object-cover" />
+                    <img src={mainImage} alt={product.name} className="w-full h-full object-cover" />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-6xl text-on-surface-variant/40">🛍️</div>
                   )}
@@ -188,6 +236,22 @@ export default function ProductCard({
                     </span>
                   )}
                 </div>
+                {gallery.length > 1 && (
+                  <div className="flex gap-2 mt-3 overflow-x-auto hide-scrollbar">
+                    {gallery.slice(0, 6).map((src, i) => (
+                      <button
+                        key={i}
+                        onClick={() => setActiveImg(i)}
+                        className={`w-14 h-14 rounded-xl overflow-hidden border-2 shrink-0 transition-colors ${
+                          i === activeImg ? 'border-primary' : 'border-transparent hover:border-outline-variant'
+                        }`}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={src} alt="" className="w-full h-full object-cover" />
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Details panel */}
@@ -208,12 +272,22 @@ export default function ProductCard({
                   <h2 className="font-display-lg text-primary text-2xl leading-tight">
                     {product.name}
                   </h2>
+                  {(detail?.vendor || detail?.subtype) && (
+                    <p className="text-xs text-on-surface-variant/70 mt-1">
+                      {[detail?.vendor, detail?.subtype].filter(Boolean).join(' · ')}
+                    </p>
+                  )}
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 flex-wrap">
                   <span className="font-bold text-2xl text-on-surface">
                     {formatPrice(price, product.currency || 'LKR')}
                   </span>
+                  {compareAt && (
+                    <span className="text-sm text-on-surface-variant/60 line-through">
+                      {formatPrice(compareAt, product.currency || 'LKR')}
+                    </span>
+                  )}
                   <span
                     className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full ${
                       inStock ? 'bg-green-100 text-green-700' : 'bg-error-container text-on-error-container'
@@ -224,6 +298,17 @@ export default function ProductCard({
                     </span>
                     {inStock ? product.stockLevel ? `${product.stockLevel} stock` : 'In stock' : 'Out of stock'}
                   </span>
+                  {detail?.rating ? (
+                    <span className="inline-flex items-center gap-1 text-xs font-bold text-on-surface">
+                      <span
+                        className="material-symbols-outlined text-[15px] text-secondary-fixed-dim"
+                        style={{ fontVariationSettings: "'FILL' 1" }}
+                      >
+                        star
+                      </span>
+                      {detail.rating.toFixed(1)}
+                    </span>
+                  ) : null}
                 </div>
 
                 {/* Delivery / trust tags */}
@@ -248,10 +333,18 @@ export default function ProductCard({
                   <h3 className="font-label-caps text-label-caps text-on-surface-variant/80 uppercase mb-1.5">
                     Details
                   </h3>
-                  <p className="text-on-surface-variant text-body-md leading-relaxed max-h-32 overflow-y-auto">
-                    {product.summary?.trim() ||
-                      'A handpicked selection from Kapruka. Tap “View on Kapruka” for full specifications, photos and delivery options.'}
-                  </p>
+                  {loadingDetail && !description ? (
+                    <div className="space-y-2">
+                      <div className="h-3 bg-surface-container rounded animate-pulse" />
+                      <div className="h-3 bg-surface-container rounded w-5/6 animate-pulse" />
+                      <div className="h-3 bg-surface-container rounded w-2/3 animate-pulse" />
+                    </div>
+                  ) : (
+                    <p className="text-on-surface-variant text-body-md leading-relaxed max-h-44 overflow-y-auto whitespace-pre-line">
+                      {description ||
+                        'A handpicked selection from Kapruka. Tap “View on Kapruka” for full specifications, photos and delivery options.'}
+                    </p>
+                  )}
                 </div>
 
                 {/* Quantity + actions */}
@@ -302,6 +395,39 @@ export default function ProductCard({
                   </div>
                 </div>
               </div>
+              </div>
+
+              {/* Similar products — "You may also like" (Kapruka-style add-ons) */}
+              {(loadingDetail || similar.length > 0) && (
+                <div className="border-t border-outline-variant/30 p-5">
+                  <div className="flex items-center gap-4 mb-3">
+                    <div className="h-px flex-grow bg-outline-variant/40" />
+                    <h4 className="font-label-caps text-label-caps text-outline uppercase tracking-[0.2em] whitespace-nowrap">
+                      You may also like
+                    </h4>
+                    <div className="h-px flex-grow bg-outline-variant/40" />
+                  </div>
+                  {similar.length > 0 ? (
+                    <div className="flex gap-4 overflow-x-auto pb-3 -mx-1 px-1 snap-x">
+                      {similar.map((p, i) => (
+                        <div key={`${p.id}-${i}`} className="snap-start">
+                          <ProductCard product={p} index={i + 1} />
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex gap-4">
+                      {[0, 1, 2].map((i) => (
+                        <div key={i} className="w-52 shrink-0">
+                          <div className="aspect-square rounded-2xl bg-surface-container animate-pulse" />
+                          <div className="h-3 bg-surface-container rounded animate-pulse mt-3" />
+                          <div className="h-3 bg-surface-container rounded w-2/3 animate-pulse mt-2" />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </motion.div>
         </motion.div>
