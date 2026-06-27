@@ -12,6 +12,14 @@ import { extractProducts, extractOrder, extractTracking } from '@/lib/mcp-parse'
 const isProductTool = (name: string) =>
   name === 'kapruka_search_products' || name === 'kapruka_get_product';
 
+/** Render **bold** markdown the model sometimes emits — plain text otherwise. */
+function renderInline(text: string) {
+  return text.split(/(\*\*[^*]+\*\*)/g).map((part, i) => {
+    const bold = part.match(/^\*\*([^*]+)\*\*$/);
+    return bold ? <strong key={i} className="font-semibold">{bold[1]}</strong> : part;
+  });
+}
+
 export default function MessageBubble({ message }: { message: Message }) {
   const isUser = message.role === 'user';
   const invocations = message.toolInvocations ?? [];
@@ -69,7 +77,7 @@ export default function MessageBubble({ message }: { message: Message }) {
                 : 'ai-bubble text-on-surface rounded-2xl rounded-tl-none'
             }`}
           >
-            {message.content}
+            {renderInline(message.content)}
           </div>
         )}
       </div>

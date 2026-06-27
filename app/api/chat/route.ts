@@ -27,6 +27,9 @@ function normalizeSearchQuery(q: string): string {
   if (/(smart\s?phones?|cell\s?phones?|mobile\s?phones?|\bphones?\b|\bmobiles?\b|handset)/.test(s)) {
     return 'smartphone';
   }
+  // Bare "jewellery"/"jewelry" (esp. with a category filter) matches gift-voucher
+  // and storage-box listings; "necklace" returns real jewellery pieces.
+  if (/\bjewel(?:le)?ry\b/.test(s)) return 'necklace';
   return q;
 }
 
@@ -37,8 +40,11 @@ function normalizeSearchQuery(q: string): string {
  */
 const ACCESSORY_RE =
   /\b(stand|holder|mount|gimbal|stabili[sz]er|tripod|case|cover|pouch|sleeve|cable|charger|adapter|protector|tempered|screen ?guard|guard|strap|lens|selfie ?stick|ring ?light|grip|stylus|earphone|earbud|headphone|powerbank|power ?bank)\b/i;
+// "necklace" shares the word "chain" with hardware listings (door/security chains)
+// and chain-strap watches — both rank highly but aren't jewellery. Drop them.
+const JEWELRY_JUNK_RE = /\b(door|security|gate|padlock|cabinet|drawer|bike|dog ?leash|watch)\b/i;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function stripAccessories(res: any): any {
+function stripByName(res: any, junkRe: RegExp): any {
   try {
     const part = res?.content?.find((c: { type: string }) => c.type === 'text');
     if (!part || typeof part.text !== 'string') return res;
@@ -47,7 +53,7 @@ function stripAccessories(res: any): any {
     const arr = key ? j[key] : Array.isArray(j) ? j : null;
     if (!Array.isArray(arr)) return res;
     const filtered = arr.filter(
-      (p: { name?: string; title?: string }) => !ACCESSORY_RE.test(p.name || p.title || '')
+      (p: { name?: string; title?: string }) => !junkRe.test(p.name || p.title || '')
     );
     if (filtered.length === 0 || filtered.length === arr.length) return res;
     if (key) j[key] = filtered;
@@ -114,8 +120,15 @@ function forceJsonResponses(raw: Record<string, Tool>): Record<string, Tool> {
           return run(inner);
         }
 
-        // Rewrite vague queries to terms the catalog actually matches.
-        if (typeof inner.q === 'string') inner.q = normalizeSearchQuery(inner.q);
+        // Rewrite vague queries to terms the catalog actually matches. A category
+        // filter paired with a vague q is the #1 cause of junk (gift vouchers,
+        // storage boxes) outranking real products — drop it whenever we rewrite,
+        // since isEmptySearch can't catch "wrong but non-empty" results.
+        if (typeof inner.q === 'string') {
+          const rewritten = normalizeSearchQuery(inner.q);
+          if (rewritten !== inner.q && inner.category) delete inner.category;
+          inner.q = rewritten;
+        }
 
         // price_asc on gadget searches surfaces cheap accessories (phone stands,
         // cases) above real devices. Force relevance so actual phones rank first;
@@ -149,8 +162,9 @@ function forceJsonResponses(raw: Record<string, Tool>): Record<string, Tool> {
             if (!isEmptySearch(res)) break;
           }
         }
-        // Phone search: strip stray accessories so only real devices show.
-        if (inner.q === 'smartphone') res = stripAccessories(res);
+        // Strip stray junk that slips in on a shared keyword.
+        if (inner.q === 'smartphone') res = stripByName(res, ACCESSORY_RE);
+        if (inner.q === 'necklace') res = stripByName(res, JEWELRY_JUNK_RE);
         return res;
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
